@@ -1,0 +1,25 @@
+#  Python Compiled Files ==
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+
+#  Operating System Files ==
+
+.DS_Store # Mac OS
+Thumbs.db # Windows
+
+# Database & Project-Specific Files ==
+
+project_manager.db
+
+# Any backup database files
+*.sqlite3-journal
+
+# Virtual Environment ==
+
+/venv
+/env

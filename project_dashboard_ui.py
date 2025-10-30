@@ -36,7 +36,7 @@ class ProjectDashboard(QDialog):
         task_tab = QWidget()
         # The actual layout for Task Management will go here
         task_layout = QVBoxLayout(task_tab)
-        task_layout.addWidget(QLabel("<h2>Task Management (FR1.x)</h2>"))
+        task_layout.addWidget(QLabel("<h2>Task Management</h2>"))
         task_layout.addWidget(QLabel("<i>Task list and Dependency Controls go here.</i>"))
         
         # Placeholder for task table
