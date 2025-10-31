@@ -59,6 +59,16 @@ class DatabaseManager:
                     FOREIGN KEY (project_id) REFERENCES projects(id)
                 )
             """)
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS daily_log (
+                    id INTEGER PRIMARY KEY,
+                    project_id INTEGER NOT NULL,
+                    log_date TEXT NOT NULL,
+                    description TEXT,
+                    hours_worked REAL,
+                    FOREIGN KEY (project_id) REFERENCES projects(id)
+                )
+            """)
             self.conn.commit()
         except sqlite3.Error as e:
             QMessageBox.critical(None, "Database Error", f"Table creation failed: {e}")
