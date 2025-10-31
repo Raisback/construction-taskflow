@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox
 )
 from PyQt5.QtCore import Qt
+from datetime import date
 
 class ProjectDashboard(QDialog):
     def __init__(self, project_id, project_name, db_manager):
@@ -32,6 +33,7 @@ class ProjectDashboard(QDialog):
         
         self.load_tasks()
         self.load_materials()
+        self.load_daily_logs()
 
     def setup_task_management(self):
         task_tab = QWidget()
@@ -283,18 +285,74 @@ class ProjectDashboard(QDialog):
                 QMessageBox.information(self, "Success", f"Consumption logged. New stock: {new_qty:.2f}.")
                 
             self.load_materials()
+
+    def get_current_date(self):
+        return date.today().strftime("%Y-%m-%d")
         
     def setup_daily_log(self):
         log_tab = QWidget()
         log_layout = QVBoxLayout(log_tab)
-        log_layout.addWidget(QLabel("<h2>Daily Progress Log</h2>"))
-        log_layout.addWidget(QLabel("<i>Daily entry form and log history table go here.</i>"))
         
-        self.log_table = QTableWidget(5, 3)
-        self.log_table.setHorizontalHeaderLabels(['Date', 'Description', 'Hours'])
+        entry_group = QWidget()
+        entry_layout = QFormLayout(entry_group)
+        entry_layout.setContentsMargins(10, 10, 10, 10)
+
+        self.log_date_input = QLineEdit(self.get_current_date())
+        self.log_description = QLineEdit()
+        self.log_hours_input = QDoubleSpinBox()
+        self.log_hours_input.setRange(0.0, 24.0)
+
+        entry_layout.addRow("Date (YYYY-MM-DD):", self.log_date_input)
+        entry_layout.addRow("Description of Work:", self.log_description)
+        entry_layout.addRow("Hours Worked:", self.log_hours_input)
+        
+        log_entry_btn = QPushButton("Log Daily Progress")
+        log_entry_btn.setStyleSheet("background-color: #9900ff; color: white; padding: 8px; border-radius: 4px;")
+        log_entry_btn.clicked.connect(self.create_daily_log_entry)
+        
+        log_layout.addWidget(QLabel("<h3>Log New Entry</h3>"))
+        log_layout.addWidget(entry_group)
+        log_layout.addWidget(log_entry_btn)
+        
+        log_layout.addWidget(QLabel("<h3>Log History</h3>"))
+        self.log_table = QTableWidget()
+        self.log_table.setColumnCount(4)
+        self.log_table.setHorizontalHeaderLabels(['ID', 'Date', 'Description', 'Hours'])
+        self.log_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         log_layout.addWidget(self.log_table) 
 
         self.tabs.addTab(log_tab, "Daily Log")
+
+    def create_daily_log_entry(self):
+        log_date = self.log_date_input.text().strip()
+        description = self.log_description.text().strip()
+        hours = self.log_hours_input.value()
+
+        if not log_date or not description or hours <= 0:
+            QMessageBox.warning(self, "Input Error", "Please fill in the date, a description, and hours worked.")
+            return
+
+        query = "INSERT INTO daily_log (project_id, log_date, description, hours_worked) VALUES (?, ?, ?, ?)"
+        params = (self.project_id, log_date, description, hours)
+        
+        if self.db.execute_query(query, params):
+            self.log_description.clear()
+            self.log_hours_input.setValue(0.0)
+            self.log_date_input.setText(self.get_current_date())
+            QMessageBox.information(self, "Success", f"Daily log for {log_date} saved successfully.")
+            self.load_daily_logs()
+
+    def load_daily_logs(self):
+        query = "SELECT id, log_date, description, hours_worked FROM daily_log WHERE project_id = ? ORDER BY log_date DESC"
+        logs = self.db.fetch_data(query, (self.project_id,))
+        
+        self.log_table.setRowCount(len(logs))
+        
+        for row, (log_id, log_date, description, hours) in enumerate(logs):
+            self.log_table.setItem(row, 0, QTableWidgetItem(str(log_id)))
+            self.log_table.setItem(row, 1, QTableWidgetItem(log_date))
+            self.log_table.setItem(row, 2, QTableWidgetItem(description))
+            self.log_table.setItem(row, 3, QTableWidgetItem(f"{hours:.1f}"))
 
     def setup_reports(self):
         report_tab = QWidget()
