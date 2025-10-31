@@ -153,6 +153,9 @@ class MainWindow(QMainWindow):
 
         self.project_table.doubleClicked.connect(self.open_project)
 
+        # --- Button Group for Selection and Deletion ---
+        button_group = QHBoxLayout()
+
         self.select_btn = QPushButton("Open Selected Project")
         self.select_btn.setStyleSheet("""
             padding: 8px; 
@@ -163,8 +166,23 @@ class MainWindow(QMainWindow):
             border-radius: 5px;
         """)
         self.select_btn.clicked.connect(self.open_project) 
+        
+        self.delete_btn = QPushButton("Delete Selected Project")
+        self.delete_btn.setStyleSheet("""
+            padding: 8px; 
+            background-color: #cc0000; 
+            color: white; 
+            font-weight: bold; 
+            border: 1px solid #cc0000;
+            border-radius: 5px;
+        """)
+        self.delete_btn.clicked.connect(self.delete_project)
 
-        selection_layout.addWidget(self.select_btn)
+        button_group.addWidget(self.select_btn)
+        button_group.addWidget(self.delete_btn)
+
+        selection_layout.addLayout(button_group)
+        # --- End Button Group ---
         
         self.main_layout.addWidget(creation_widget, 30) 
         self.main_layout.addWidget(selection_widget, 70) 
@@ -184,6 +202,48 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Success", f"Project '{name}' created successfully.")
             self.new_project_name.clear()
             self.load_project_data() 
+
+    def delete_project(self):
+        selected_rows = self.project_table.selectionModel().selectedRows()
+        
+        if not selected_rows:
+            QMessageBox.warning(self, "Selection Error", "Please select a project to delete.")
+            return
+        
+        row_index = selected_rows[0].row()
+        project_id_item = self.project_table.item(row_index, 0)
+        project_name_item = self.project_table.item(row_index, 1)
+        
+        if not project_id_item or not project_name_item:
+            QMessageBox.critical(self, "Data Error", "Could not retrieve project ID or Name.")
+            return
+            
+        project_id = int(project_id_item.text())
+        project_name = project_name_item.text()
+
+        # Confirmation Dialog (Required)
+        reply = QMessageBox.question(self, 'Confirm Deletion', 
+            f"Are you sure you want to permanently delete project '{project_name}' (ID: {project_id}) and ALL its associated tasks, materials, and logs? This action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.No:
+            return
+
+        # Perform cascading deletion to maintain database integrity
+        
+        # 1. Delete tasks
+        self.db.execute_query("DELETE FROM tasks WHERE project_id = ?", (project_id,))
+        # 2. Delete materials
+        self.db.execute_query("DELETE FROM materials WHERE project_id = ?", (project_id,))
+        # 3. Delete daily_log
+        self.db.execute_query("DELETE FROM daily_log WHERE project_id = ?", (project_id,))
+        
+        # 4. Delete project itself
+        if self.db.execute_query("DELETE FROM projects WHERE id = ?", (project_id,)):
+            QMessageBox.information(self, "Success", f"Project '{project_name}' and all related data have been permanently deleted.")
+            self.load_project_data()
+        else:
+            QMessageBox.critical(self, "Error", f"Failed to delete project '{project_name}'. Please check the console for database errors.")
 
     def load_project_data(self):
         projects = self.db.fetch_data("SELECT id, name, start_date, status FROM projects ORDER BY id DESC")
