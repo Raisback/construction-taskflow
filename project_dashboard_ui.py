@@ -34,6 +34,9 @@ class ProjectDashboard(QDialog):
         self.load_tasks()
         self.load_materials()
         self.load_daily_logs()
+        self.update_report() 
+        
+        self.tabs.currentChanged.connect(self.update_report)
 
     def setup_task_management(self):
         task_tab = QWidget()
@@ -101,6 +104,7 @@ class ProjectDashboard(QDialog):
             self.new_task_name.clear()
             QMessageBox.information(self, "Success", f"Task '{name}' added.")
             self.load_tasks()
+            self.update_report() 
 
     def load_tasks(self):
         query = "SELECT id, name, prerequisite_task_id, status FROM tasks WHERE project_id = ?"
@@ -152,6 +156,7 @@ class ProjectDashboard(QDialog):
         if self.db.execute_query(update_query, (new_status, task_id)):
             QMessageBox.information(self, "Success", f"Task {task_id} status updated to '{new_status}'.")
             self.load_tasks()
+            self.update_report() 
 
     def setup_resource_inventory(self):
         resource_tab = QWidget()
@@ -354,14 +359,51 @@ class ProjectDashboard(QDialog):
             self.log_table.setItem(row, 2, QTableWidgetItem(description))
             self.log_table.setItem(row, 3, QTableWidgetItem(f"{hours:.1f}"))
 
+    def calculate_completion(self):
+        query = "SELECT status FROM tasks WHERE project_id = ?"
+        tasks = self.db.fetch_data(query, (self.project_id,))
+        
+        if not tasks:
+            return 0.0
+
+        total_tasks = len(tasks)
+        completed_tasks = sum(1 for status in tasks if status[0] == 'Completed')
+        
+        completion_percentage = (completed_tasks / total_tasks) * 100
+        return completion_percentage
+
+    def update_report(self):
+        completion_percent = self.calculate_completion()
+        
+        # Calculate other metrics like total hours logged
+        hours_query = "SELECT SUM(hours_worked) FROM daily_log WHERE project_id = ?"
+        total_hours = self.db.fetch_data(hours_query, (self.project_id,))[0][0] or 0.0
+        
+        # Calculate inventory cost
+        cost_query = "SELECT SUM(quantity * unit_cost) FROM materials WHERE project_id = ?"
+        total_inventory_cost = self.db.fetch_data(cost_query, (self.project_id,))[0][0] or 0.0
+
+        # Update the report label 
+        report_text = f"""
+        <h2>Project Status Summary</h2>
+        <p style='font-size: 18pt; font-weight: bold; color: {'#38761d' if completion_percent == 100 else '#f1c232'}'>
+            Completion: {completion_percent:.1f}%
+        </p>
+        <p>Total Tasks: <b>{len(self.db.fetch_data("SELECT id FROM tasks WHERE project_id = ?", (self.project_id,))) or 0}</b></p>
+        <p>Hours Logged: <b>{total_hours:.1f}</b></p>
+        <p>Estimated Inventory Value: <b>${total_inventory_cost:,.2f}</b></p>
+        """
+        self.report_label.setText(report_text)
+
+
     def setup_reports(self):
         report_tab = QWidget()
         report_layout = QVBoxLayout(report_tab)
-        report_layout.addWidget(QLabel("<h2>Status Report</h2>"))
-        report_layout.addWidget(QLabel("<i>Summary labels and completion percentage display go here.</i>"))
         
-        self.report_label = QLabel("Completion %: 0%")
+        self.report_label = QLabel("<h2>Status Report</h2>")
+        self.report_label.setWordWrap(True)
         report_layout.addWidget(self.report_label) 
+        report_layout.addStretch(1)
 
         self.tabs.addTab(report_tab, "Reports")
 
