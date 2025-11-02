@@ -106,8 +106,12 @@ class MainWindow(QMainWindow):
     def setup_project_selection_ui(self):
         creation_widget = QWidget()
         creation_layout = QVBoxLayout(creation_widget)
+        
+       
+        creation_layout.addWidget(QLabel("<h1 style='color:#0b5394;'>Construction Manager</h1>"))
 
-        creation_layout.addWidget(QLabel("<h2>1. Create New Project</h2>"))
+       
+        creation_layout.addWidget(QLabel("<h2>Create New Project</h2>"))
 
         creation_form = QFormLayout()
 
@@ -139,9 +143,9 @@ class MainWindow(QMainWindow):
         selection_widget = QWidget()
         selection_layout = QVBoxLayout(selection_widget)
 
-        selection_layout.addWidget(QLabel("<h2>2. Select Existing Project</h2>"))
-        selection_layout.addWidget(QLabel("<i>Double-click a row to open the project dashboard.</i>"))
-
+      
+        selection_layout.addWidget(QLabel("<h2>Open Existing Project</h2>"))
+        
         self.project_table = QTableWidget()
         self.project_table.setColumnCount(4)
         self.project_table.setHorizontalHeaderLabels(['ID', 'Name', 'Start Date', 'Status'])
@@ -153,7 +157,7 @@ class MainWindow(QMainWindow):
 
         self.project_table.doubleClicked.connect(self.open_project)
 
-        # --- Button Group for Selection and Deletion ---
+
         button_group = QHBoxLayout()
 
         self.select_btn = QPushButton("Open Selected Project")
@@ -182,10 +186,11 @@ class MainWindow(QMainWindow):
         button_group.addWidget(self.delete_btn)
 
         selection_layout.addLayout(button_group)
-        # --- End Button Group ---
+ 
         
-        self.main_layout.addWidget(creation_widget, 30) 
+
         self.main_layout.addWidget(selection_widget, 70) 
+        self.main_layout.addWidget(creation_widget, 30) 
 
     def create_project(self):
         name = self.new_project_name.text().strip()
@@ -221,7 +226,8 @@ class MainWindow(QMainWindow):
         project_id = int(project_id_item.text())
         project_name = project_name_item.text()
 
-        # Confirmation Dialog (Required)
+        # Confirmation Dialog 
+
         reply = QMessageBox.question(self, 'Confirm Deletion', 
             f"Are you sure you want to permanently delete project '{project_name}' (ID: {project_id}) and ALL its associated tasks, materials, and logs? This action cannot be undone.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -229,16 +235,17 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.No:
             return
 
+
         # Perform cascading deletion to maintain database integrity
         
-        # 1. Delete tasks
+        
         self.db.execute_query("DELETE FROM tasks WHERE project_id = ?", (project_id,))
-        # 2. Delete materials
+        
         self.db.execute_query("DELETE FROM materials WHERE project_id = ?", (project_id,))
-        # 3. Delete daily_log
+        
         self.db.execute_query("DELETE FROM daily_log WHERE project_id = ?", (project_id,))
         
-        # 4. Delete project itself
+        
         if self.db.execute_query("DELETE FROM projects WHERE id = ?", (project_id,)):
             QMessageBox.information(self, "Success", f"Project '{project_name}' and all related data have been permanently deleted.")
             self.load_project_data()

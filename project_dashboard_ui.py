@@ -2,13 +2,17 @@ import sys
 from PyQt5.QtWidgets import (
     QDialog, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QTableWidget, QPushButton, QFormLayout, QLineEdit,
-    QMessageBox, QTableWidgetItem, QComboBox, QHeaderView,
-    QDoubleSpinBox
+    QTableWidgetItem, QComboBox, QMessageBox, QTextEdit, QHeaderView,
+    QAbstractItemView
 )
-from PyQt5.QtCore import Qt
-from datetime import date
+from PyQt5.QtCore import Qt, QDate
+from datetime import datetime
 
 class ProjectDashboard(QDialog):
+    """
+    The main management interface for an individual project.
+    Uses QTabWidget to separate different management areas.
+    """
     def __init__(self, project_id, project_name, db_manager):
         super().__init__()
         self.project_id = project_id
@@ -16,394 +20,633 @@ class ProjectDashboard(QDialog):
         self.db = db_manager
         
         self.setWindowTitle(f"Project Dashboard: {project_name}")
-        self.setGeometry(150, 150, 1200, 800) 
+        self.setGeometry(150, 150, 1200, 800) # Larger window for detailed management
 
         self.main_layout = QVBoxLayout(self)
         
-        self.title_label = QLabel(f"<h1>Project: {project_name} (ID: {project_id})</h1>")
+        # Display the selected project name prominently
+        self.title_label = QLabel(f"<h1 style='color:#0b5394;'>Project: {project_name} (ID: {project_id})</h1>")
         self.main_layout.addWidget(self.title_label)
 
+        # Initialize the Tab Widget
         self.tabs = QTabWidget()
         self.main_layout.addWidget(self.tabs)
 
+        # Setup the four main management tabs
         self.setup_task_management()
         self.setup_resource_inventory()
         self.setup_daily_log()
         self.setup_reports()
-        
+
+        # Load initial data for all tables
+        self.load_all_data()
+
+    def load_all_data(self):
+        """Loads data for all tabs upon dashboard initialization."""
         self.load_tasks()
         self.load_materials()
         self.load_daily_logs()
-        self.update_report() 
-        
-        self.tabs.currentChanged.connect(self.update_report)
+        self.update_reports()
+
+    # --- TAB 1: Task Management ---
 
     def setup_task_management(self):
+        """Creates the Tasks & Dependencies tab (FR1.x)."""
         task_tab = QWidget()
         task_layout = QVBoxLayout(task_tab)
-        
-        creation_group = QWidget()
-        creation_layout = QFormLayout(creation_group)
-        creation_layout.setContentsMargins(10, 10, 10, 10)
-        
-        self.new_task_name = QLineEdit()
-        self.new_task_prereq = QComboBox()
-        self.new_task_prereq.addItem("None", None)
+        task_layout.addWidget(QLabel("<h2>Task Management</h2>"))
 
-        creation_layout.addRow("Task Name:", self.new_task_name)
-        creation_layout.addRow("Prerequisite Task:", self.new_task_prereq)
+        # --- Task Input Form ---
+        input_group = QHBoxLayout()
+        task_form = QFormLayout()
+
+        self.task_name_input = QLineEdit()
+        self.task_prereq_combo = QComboBox() # For selecting prerequisite (FR1.2)
+        self.task_prereq_combo.addItem("None", None) # Default option
+
+        task_form.addRow("Task Name:", self.task_name_input)
+        task_form.addRow("Prerequisite:", self.task_prereq_combo)
         
-        create_task_btn = QPushButton("Add New Task")
-        create_task_btn.setStyleSheet("background-color: #3c78d8; color: white; padding: 8px; border-radius: 4px;")
-        create_task_btn.clicked.connect(self.create_task)
-        creation_layout.addWidget(create_task_btn)
-        
-        task_layout.addWidget(QLabel("<h3>Add New Task</h3>"))
-        task_layout.addWidget(creation_group)
-        
-        task_layout.addWidget(QLabel("<h3>Project Tasks</h3>"))
+        add_task_btn = QPushButton("Add New Task")
+        add_task_btn.setStyleSheet("background-color: #38761d; color: white; padding: 5px;")
+        add_task_btn.clicked.connect(self.add_task)
+
+        input_group.addLayout(task_form)
+        input_group.addWidget(add_task_btn, 0, Qt.AlignBottom)
+        task_layout.addLayout(input_group)
+        task_layout.addWidget(self.create_separator())
+
+        # --- Task List Table ---
+        task_layout.addWidget(QLabel("<h3>Current Tasks</h3>"))
         self.task_table = QTableWidget()
         self.task_table.setColumnCount(4)
-        self.task_table.setHorizontalHeaderLabels(['ID', 'Name', 'Prerequisite ID', 'Status'])
-        self.task_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.task_table.setSelectionBehavior(QTableWidget.SelectRows)
-
+        self.task_table.setHorizontalHeaderLabels(['ID', 'Task Name', 'Prerequisite', 'Status'])
+        self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers) # Tasks are not directly editable in table
         task_layout.addWidget(self.task_table)
-        
-        control_group = QWidget()
-        control_layout = QHBoxLayout(control_group)
-        
-        self.task_status_combo = QComboBox()
-        self.task_status_combo.addItems(['Not Started', 'In Progress', 'Completed', 'On Hold'])
-        
-        update_status_btn = QPushButton("Update Status of Selected Task")
-        update_status_btn.setStyleSheet("background-color: #f1c232; color: black; padding: 8px; border-radius: 4px;")
-        update_status_btn.clicked.connect(self.update_task_status)
-        
-        control_layout.addWidget(QLabel("New Status:"))
-        control_layout.addWidget(self.task_status_combo)
-        control_layout.addWidget(update_status_btn)
-        control_layout.addStretch(1)
 
-        task_layout.addWidget(control_group)
+        # --- Task Action Buttons (FR1.3) ---
+        task_action_layout = QHBoxLayout()
+        
+        complete_task_btn = QPushButton("Mark Selected Task as Complete")
+        complete_task_btn.setStyleSheet("background-color: #008080; color: white; padding: 8px;")
+        complete_task_btn.clicked.connect(lambda: self.update_task_status("Complete"))
+
+        delete_task_btn = QPushButton("Delete Selected Task")
+        delete_task_btn.setStyleSheet("background-color: #cc0000; color: white; padding: 8px;")
+        delete_task_btn.clicked.connect(self.delete_task)
+
+        task_action_layout.addWidget(complete_task_btn)
+        task_action_layout.addWidget(delete_task_btn)
+        task_layout.addLayout(task_action_layout)
 
         self.tabs.addTab(task_tab, "Tasks & Dependencies")
 
-    def create_task(self):
-        name = self.new_task_name.text().strip()
-        prereq_id = self.new_task_prereq.currentData()
-        
+    def add_task(self):
+        """Adds a new task to the database."""
+        name = self.task_name_input.text().strip()
+        prereq_id = self.task_prereq_combo.currentData() # Data is stored as ID or None
+
         if not name:
             QMessageBox.warning(self, "Input Error", "Task Name cannot be empty.")
             return
 
         query = "INSERT INTO tasks (project_id, name, prerequisite_task_id) VALUES (?, ?, ?)"
-        params = (self.project_id, name, prereq_id)
-        
-        if self.db.execute_query(query, params):
-            self.new_task_name.clear()
-            QMessageBox.information(self, "Success", f"Task '{name}' added.")
+        if self.db.execute_query(query, (self.project_id, name, prereq_id)):
+            self.task_name_input.clear()
             self.load_tasks()
-            self.update_report() 
-
+            QMessageBox.information(self, "Success", "Task added.")
+        
     def load_tasks(self):
-        query = "SELECT id, name, prerequisite_task_id, status FROM tasks WHERE project_id = ?"
+        """Loads tasks from the database into the table and prerequisite combo box."""
+        # Query tasks and their prerequisites
+        query = """
+        SELECT t1.id, t1.name, t2.name AS prereq_name, t1.status
+        FROM tasks t1
+        LEFT JOIN tasks t2 ON t1.prerequisite_task_id = t2.id
+        WHERE t1.project_id = ? ORDER BY t1.id DESC
+        """
         tasks = self.db.fetch_data(query, (self.project_id,))
         
         self.task_table.setRowCount(len(tasks))
         
-        self.new_task_prereq.clear()
-        self.new_task_prereq.addItem("None", None)
-        
-        for row, (task_id, name, prereq_id, status) in enumerate(tasks):
+        # Populate table
+        for row, (task_id, name, prereq_name, status) in enumerate(tasks):
             self.task_table.setItem(row, 0, QTableWidgetItem(str(task_id)))
             self.task_table.setItem(row, 1, QTableWidgetItem(name))
-            self.task_table.setItem(row, 2, QTableWidgetItem(str(prereq_id) if prereq_id else ''))
-            self.task_table.setItem(row, 3, QTableWidgetItem(status))
+            self.task_table.setItem(row, 2, QTableWidgetItem(prereq_name if prereq_name else "None"))
             
-            self.new_task_prereq.addItem(f"{task_id}: {name}", task_id)
+            status_item = QTableWidgetItem(status)
+            if status == "Complete":
+                status_item.setBackground(Qt.green)
+            elif status == "In Progress":
+                status_item.setBackground(Qt.yellow)
+            else:
+                status_item.setBackground(Qt.red)
+            self.task_table.setItem(row, 3, status_item)
 
-    def update_task_status(self):
+        # Update Prerequisite Combo Box
+        self.task_prereq_combo.clear()
+        self.task_prereq_combo.addItem("None", None)
+        for task_id, name, _, _ in tasks:
+            self.task_prereq_combo.addItem(name, task_id)
+            
+        self.update_reports()
+
+    def update_task_status(self, status):
+        """Updates the status of the selected task (FR1.3)."""
         selected_rows = self.task_table.selectionModel().selectedRows()
-        new_status = self.task_status_combo.currentText()
-
+        
         if not selected_rows:
             QMessageBox.warning(self, "Selection Error", "Please select a task to update.")
             return
 
         row_index = selected_rows[0].row()
         task_id_item = self.task_table.item(row_index, 0)
-        prereq_id_item = self.task_table.item(row_index, 2).text()
         
         if not task_id_item:
-            QMessageBox.critical(self, "Data Error", "Could not retrieve Task ID.")
+            QMessageBox.critical(self, "Data Error", "Could not retrieve task ID.")
+            return
+            
+        task_id = int(task_id_item.text())
+
+        # Check for uncompleted prerequisite (FR1.3 constraint)
+        prereq_query = """
+        SELECT t2.name, t2.status 
+        FROM tasks t1 
+        JOIN tasks t2 ON t1.prerequisite_task_id = t2.id
+        WHERE t1.id = ? AND t2.status != 'Complete'
+        """
+        prereq_data = self.db.fetch_data(prereq_query, (task_id,))
+
+        if status == "Complete" and prereq_data:
+            prereq_name = prereq_data[0][0]
+            QMessageBox.warning(self, "Constraint Violation", 
+                f"Cannot mark task as '{status}'. Prerequisite task '{prereq_name}' must be completed first."
+            )
             return
 
-        task_id = int(task_id_item.text())
-        prereq_id = int(prereq_id_item) if prereq_id_item.isdigit() else None
-        
-        if new_status in ['In Progress', 'Completed'] and prereq_id is not None:
-            query = "SELECT status FROM tasks WHERE id = ?"
-            prereq_data = self.db.fetch_data(query, (prereq_id,))
-            
-            if prereq_data and prereq_data[0][0] != 'Completed':
-                QMessageBox.critical(self, "Dependency Error", 
-                                     f"Task {task_id} requires prerequisite task {prereq_id} to be 'Completed' before proceeding.")
-                return 
-        
-        update_query = "UPDATE tasks SET status = ? WHERE id = ?"
-        
-        if self.db.execute_query(update_query, (new_status, task_id)):
-            QMessageBox.information(self, "Success", f"Task {task_id} status updated to '{new_status}'.")
+        query = "UPDATE tasks SET status = ? WHERE id = ?"
+        if self.db.execute_query(query, (status, task_id)):
             self.load_tasks()
-            self.update_report() 
+        
+    def delete_task(self):
+        """Deletes the selected task."""
+        selected_rows = self.task_table.selectionModel().selectedRows()
+        
+        if not selected_rows:
+            QMessageBox.warning(self, "Selection Error", "Please select a task to delete.")
+            return
+
+        row_index = selected_rows[0].row()
+        task_id_item = self.task_table.item(row_index, 0)
+        task_name_item = self.task_table.item(row_index, 1)
+
+        if not task_id_item or not task_name_item:
+            QMessageBox.critical(self, "Data Error", "Could not retrieve task ID or Name.")
+            return
+            
+        task_id = int(task_id_item.text())
+        task_name = task_name_item.text()
+
+        # Confirmation Dialog
+        reply = QMessageBox.question(self, 'Confirm Deletion', 
+            f"Are you sure you want to delete task '{task_name}'? This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.No:
+            return
+
+        query = "DELETE FROM tasks WHERE id = ?"
+        if self.db.execute_query(query, (task_id,)):
+            QMessageBox.information(self, "Success", f"Task '{task_name}' deleted.")
+            self.load_tasks()
+
+    # --- TAB 2: Resource Inventory ---
 
     def setup_resource_inventory(self):
+        """Creates the Resources & Stock tab (FR2.x)."""
         resource_tab = QWidget()
         resource_layout = QVBoxLayout(resource_tab)
-        
-        main_h_layout = QHBoxLayout()
-        
-        inv_management_widget = QWidget()
-        inv_management_layout = QVBoxLayout(inv_management_widget)
-        inv_management_layout.addWidget(QLabel("<h3>Inventory Management</h3>"))
-        
-        inv_form = QFormLayout()
-        self.material_name = QLineEdit()
-        self.material_quantity = QDoubleSpinBox()
-        self.material_quantity.setRange(0.0, 99999.0)
-        self.material_cost = QDoubleSpinBox()
-        self.material_cost.setRange(0.0, 99999.0)
-        self.material_threshold = QDoubleSpinBox()
-        self.material_threshold.setRange(0.0, 99999.0)
+        resource_layout.addWidget(QLabel("<h2>Resource Inventory</h2>"))
 
-        inv_form.addRow("Material Name:", self.material_name)
-        inv_form.addRow("Initial Quantity:", self.material_quantity)
-        inv_form.addRow("Unit Cost:", self.material_cost)
-        inv_form.addRow("Alert Threshold:", self.material_threshold)
+        # --- Input Forms for Adding/Updating Resources ---
+        forms_and_alerts = QHBoxLayout()
         
-        add_material_btn = QPushButton("Add Material to Inventory")
-        add_material_btn.setStyleSheet("background-color: #38761d; color: white; padding: 8px; border-radius: 4px;")
-        add_material_btn.clicked.connect(self.create_material)
+        # 1. Add Material Form (FR2.1)
+        add_form_widget = QWidget()
+        add_form_layout = QFormLayout(add_form_widget)
+        add_form_layout.addRow(QLabel("<h3>Add New Material</h3>"))
+
+        self.material_name_input = QLineEdit()
+        self.material_cost_input = QLineEdit()
+        self.material_threshold_input = QLineEdit()
         
-        inv_management_layout.addLayout(inv_form)
-        inv_management_layout.addWidget(add_material_btn)
-        inv_management_layout.addStretch(1)
-
-        consumption_widget = QWidget()
-        consumption_layout = QVBoxLayout(consumption_widget)
-        consumption_layout.addWidget(QLabel("<h3>Log Consumption</h3>"))
-
-        cons_form = QFormLayout()
-        self.cons_material_combo = QComboBox()
-        self.cons_quantity = QDoubleSpinBox()
-        self.cons_quantity.setRange(0.0, 99999.0)
-
-        cons_form.addRow("Select Material:", self.cons_material_combo)
-        cons_form.addRow("Quantity Used:", self.cons_quantity)
-
-        log_consumption_btn = QPushButton("Log Use & Check Stock")
-        log_consumption_btn.setStyleSheet("background-color: #cc0000; color: white; padding: 8px; border-radius: 4px;")
-        log_consumption_btn.clicked.connect(self.log_consumption)
-
-        consumption_layout.addLayout(cons_form)
-        consumption_layout.addWidget(log_consumption_btn)
-        consumption_layout.addStretch(1)
-
-        main_h_layout.addWidget(inv_management_widget, 40)
-        main_h_layout.addWidget(consumption_widget, 40)
+        self.add_qty_input = QLineEdit()
         
-        resource_layout.addLayout(main_h_layout)
+        add_form_layout.addRow("Name:", self.material_name_input)
+        add_form_layout.addRow("Unit Cost:", self.material_cost_input)
+        add_form_layout.addRow("Stock Alert Threshold:", self.material_threshold_input)
+        add_form_layout.addRow("Initial Quantity:", self.add_qty_input)
         
-        resource_layout.addWidget(QLabel("<h3>Current Inventory Stock</h3>"))
+        add_material_btn = QPushButton("Add Material")
+        add_material_btn.setStyleSheet("background-color: #38761d; color: white; padding: 5px;")
+        add_material_btn.clicked.connect(self.add_material)
+        add_form_layout.addWidget(add_material_btn)
+        
+        forms_and_alerts.addWidget(add_form_widget)
+
+        # 2. Alert System Display (FR2.3)
+        alert_widget = QWidget()
+        alert_layout = QVBoxLayout(alert_widget)
+        alert_layout.addWidget(QLabel("<h3>Stock Alert System (FR2.3)</h3>"))
+
+        self.alert_label = QLabel("All stock levels are adequate.")
+        self.alert_label.setStyleSheet("padding: 15px; border: 2px solid green; background-color: #e6ffe6; color: green; font-weight: bold;")
+        self.alert_label.setWordWrap(True)
+
+        alert_layout.addWidget(self.alert_label)
+        alert_layout.addStretch(1)
+
+        forms_and_alerts.addWidget(alert_widget)
+        resource_layout.addLayout(forms_and_alerts)
+        resource_layout.addWidget(self.create_separator())
+        
+        # --- Inventory Table ---
+        resource_layout.addWidget(QLabel("<h3>Current Inventory (Double-click to update Qty)</h3>"))
         self.inventory_table = QTableWidget()
         self.inventory_table.setColumnCount(5)
         self.inventory_table.setHorizontalHeaderLabels(['ID', 'Name', 'Qty', 'Unit Cost', 'Threshold'])
-        self.inventory_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.inventory_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.inventory_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.inventory_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         resource_layout.addWidget(self.inventory_table) 
+
+        # Connect double-click for quick quantity update (FR2.2)
+        self.inventory_table.doubleClicked.connect(self.prompt_quantity_update)
         
+        delete_material_btn = QPushButton("Delete Selected Material")
+        delete_material_btn.setStyleSheet("background-color: #cc0000; color: white; padding: 8px;")
+        delete_material_btn.clicked.connect(self.delete_material)
+        resource_layout.addWidget(delete_material_btn)
+
         self.tabs.addTab(resource_tab, "Resources & Stock")
 
-    def create_material(self):
-        name = self.material_name.text().strip()
-        quantity = self.material_quantity.value()
-        cost = self.material_cost.value()
-        threshold = self.material_threshold.value()
+    def add_material(self):
+        """Adds a new material resource to the database (FR2.1)."""
+        name = self.material_name_input.text().strip()
+        cost_str = self.material_cost_input.text().strip()
+        threshold_str = self.material_threshold_input.text().strip()
+        qty_str = self.add_qty_input.text().strip()
 
         if not name:
             QMessageBox.warning(self, "Input Error", "Material Name cannot be empty.")
             return
+        
+        try:
+            cost = float(cost_str) if cost_str else 0.0
+            threshold = float(threshold_str) if threshold_str else 0.0
+            qty = float(qty_str) if qty_str else 0.0
+        except ValueError:
+            QMessageBox.warning(self, "Input Error", "Cost, Threshold, and Quantity must be valid numbers.")
+            return
 
         query = "INSERT INTO materials (project_id, name, quantity, unit_cost, alert_threshold) VALUES (?, ?, ?, ?, ?)"
-        params = (self.project_id, name, quantity, cost, threshold)
         
-        if self.db.execute_query(query, params):
-            self.material_name.clear()
-            self.material_quantity.setValue(0.0)
-            self.material_cost.setValue(0.0)
-            self.material_threshold.setValue(0.0)
-            QMessageBox.information(self, "Success", f"Material '{name}' added to inventory.")
+        if self.db.execute_query(query, (self.project_id, name, qty, cost, threshold)):
+            self.material_name_input.clear()
+            self.material_cost_input.clear()
+            self.material_threshold_input.clear()
+            self.add_qty_input.clear()
             self.load_materials()
+            QMessageBox.information(self, "Success", f"Material '{name}' added.")
 
     def load_materials(self):
-        query = "SELECT id, name, quantity, unit_cost, alert_threshold FROM materials WHERE project_id = ?"
+        """Loads materials from the database into the inventory table."""
+        query = "SELECT id, name, quantity, unit_cost, alert_threshold FROM materials WHERE project_id = ? ORDER BY name ASC"
         materials = self.db.fetch_data(query, (self.project_id,))
         
         self.inventory_table.setRowCount(len(materials))
-        
-        self.cons_material_combo.clear()
+        low_stock_materials = []
         
         for row, (mat_id, name, qty, cost, threshold) in enumerate(materials):
             self.inventory_table.setItem(row, 0, QTableWidgetItem(str(mat_id)))
             self.inventory_table.setItem(row, 1, QTableWidgetItem(name))
-            self.inventory_table.setItem(row, 2, QTableWidgetItem(f"{qty:.2f}"))
+            
+            qty_item = QTableWidgetItem(f"{qty:.2f}")
+            self.inventory_table.setItem(row, 2, qty_item)
             self.inventory_table.setItem(row, 3, QTableWidgetItem(f"${cost:.2f}"))
             self.inventory_table.setItem(row, 4, QTableWidgetItem(f"{threshold:.2f}"))
             
-            self.cons_material_combo.addItem(f"{name} (ID: {mat_id})", (mat_id, qty, threshold))
+            if qty <= threshold:
+                low_stock_materials.append(name)
+                qty_item.setBackground(Qt.yellow)
+        
+        self.update_stock_alert(low_stock_materials)
 
-    def log_consumption(self):
-        material_data = self.cons_material_combo.currentData()
-        quantity_used = self.cons_quantity.value()
+    def update_stock_alert(self, low_stock_materials):
+        """Updates the stock alert label (FR2.3)."""
+        if low_stock_materials:
+            materials_list = ", ".join(low_stock_materials)
+            alert_text = f"🚨 LOW STOCK ALERT: The following materials are below their set thresholds: {materials_list}."
+            self.alert_label.setText(alert_text)
+            self.alert_label.setStyleSheet("padding: 15px; border: 2px solid red; background-color: #ffcccc; color: red; font-weight: bold;")
+        else:
+            self.alert_label.setText("✅ All stock levels are adequate.")
+            self.alert_label.setStyleSheet("padding: 15px; border: 2px solid green; background-color: #e6ffe6; color: green; font-weight: bold;")
 
-        if material_data is None:
-            QMessageBox.warning(self, "Selection Error", "Please select a material to log consumption.")
+    def prompt_quantity_update(self):
+        """Prompts the user to update the quantity of the double-clicked material (FR2.2)."""
+        selected_rows = self.inventory_table.selectionModel().selectedRows()
+        if not selected_rows: return
+
+        row_index = selected_rows[0].row()
+        mat_id_item = self.inventory_table.item(row_index, 0)
+        mat_name_item = self.inventory_table.item(row_index, 1)
+        
+        if not mat_id_item or not mat_name_item: return
+
+        mat_id = int(mat_id_item.text())
+        mat_name = mat_name_item.text()
+
+        # Custom dialog for quantity update
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Update Quantity for {mat_name}")
+        dialog.setGeometry(200, 200, 300, 150)
+        
+        layout = QFormLayout(dialog)
+        
+        qty_input = QLineEdit()
+        qty_input.setPlaceholderText("Enter new total quantity (e.g., 50.5)")
+        
+        layout.addRow("New Quantity:", qty_input)
+        
+        update_btn = QPushButton("Update Stock")
+        update_btn.setStyleSheet("background-color: #0b5394; color: white; padding: 5px;")
+        
+        def update_action():
+            try:
+                new_qty = float(qty_input.text().strip())
+                query = "UPDATE materials SET quantity = ? WHERE id = ?"
+                if self.db.execute_query(query, (new_qty, mat_id)):
+                    QMessageBox.information(self, "Success", f"Quantity for {mat_name} updated to {new_qty:.2f}.")
+                    self.load_materials()
+                    dialog.accept()
+                else:
+                    QMessageBox.critical(self, "Error", f"Failed to update quantity.")
+            except ValueError:
+                QMessageBox.warning(self, "Input Error", "Please enter a valid number for quantity.")
+
+        update_btn.clicked.connect(update_action)
+        layout.addWidget(update_btn)
+
+        dialog.exec_()
+    
+    def delete_material(self):
+        """Deletes the selected material."""
+        selected_rows = self.inventory_table.selectionModel().selectedRows()
+        
+        if not selected_rows:
+            QMessageBox.warning(self, "Selection Error", "Please select a material to delete.")
+            return
+
+        row_index = selected_rows[0].row()
+        mat_id_item = self.inventory_table.item(row_index, 0)
+        mat_name_item = self.inventory_table.item(row_index, 1)
+
+        if not mat_id_item or not mat_name_item:
+            QMessageBox.critical(self, "Data Error", "Could not retrieve material ID or Name.")
             return
             
-        mat_id, current_qty, threshold = material_data
-        
-        new_qty = current_qty - quantity_used
-        
-        if new_qty < 0:
-            QMessageBox.critical(self, "Stock Error", 
-                                 f"Insufficient stock! Cannot use {quantity_used:.2f}. Current stock: {current_qty:.2f}.")
+        mat_id = int(mat_id_item.text())
+        mat_name = mat_name_item.text()
+
+        # Confirmation Dialog
+        reply = QMessageBox.question(self, 'Confirm Deletion', 
+            f"Are you sure you want to delete material '{mat_name}'? This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.No:
             return
 
-        update_query = "UPDATE materials SET quantity = ? WHERE id = ?"
-        
-        if self.db.execute_query(update_query, (new_qty, mat_id)):
-            
-            if new_qty <= threshold:
-                QMessageBox.warning(self, "LOW STOCK ALERT",
-                                    f"WARNING: Material '{self.cons_material_combo.currentText()}' is below its alert threshold ({threshold:.2f}). Current stock: {new_qty:.2f}")
-            else:
-                QMessageBox.information(self, "Success", f"Consumption logged. New stock: {new_qty:.2f}.")
-                
+        query = "DELETE FROM materials WHERE id = ?"
+        if self.db.execute_query(query, (mat_id,)):
+            QMessageBox.information(self, "Success", f"Material '{mat_name}' deleted.")
             self.load_materials()
 
-    def get_current_date(self):
-        return date.today().strftime("%Y-%m-%d")
-        
+    # --- TAB 3: Daily Log ---
+
     def setup_daily_log(self):
+        """Creates the Daily Log tab (FR3.1)."""
         log_tab = QWidget()
         log_layout = QVBoxLayout(log_tab)
-        
-        entry_group = QWidget()
-        entry_layout = QFormLayout(entry_group)
-        entry_layout.setContentsMargins(10, 10, 10, 10)
+        log_layout.addWidget(QLabel("<h2>Daily Progress Log (FR3.1)</h2>"))
 
-        self.log_date_input = QLineEdit(self.get_current_date())
-        self.log_description = QLineEdit()
-        self.log_hours_input = QDoubleSpinBox()
-        self.log_hours_input.setRange(0.0, 24.0)
+        # --- Daily Log Input Form ---
+        log_form_widget = QWidget()
+        log_form_layout = QVBoxLayout(log_form_widget)
+        
+        input_form = QFormLayout()
+        
+        # Use current date as default
+        self.log_date_input = QLineEdit(QDate.currentDate().toString(Qt.ISODate))
+        self.log_hours_input = QLineEdit()
+        self.log_description_input = QTextEdit()
+        self.log_description_input.setPlaceholderText("Enter detailed notes on progress, issues, and weather conditions...")
+        self.log_description_input.setFixedHeight(80)
 
-        entry_layout.addRow("Date (YYYY-MM-DD):", self.log_date_input)
-        entry_layout.addRow("Description of Work:", self.log_description)
-        entry_layout.addRow("Hours Worked:", self.log_hours_input)
+        input_form.addRow("Date (YYYY-MM-DD):", self.log_date_input)
+        input_form.addRow("Hours Worked (e.g., 8.0):", self.log_hours_input)
         
-        log_entry_btn = QPushButton("Log Daily Progress")
-        log_entry_btn.setStyleSheet("background-color: #9900ff; color: white; padding: 8px; border-radius: 4px;")
-        log_entry_btn.clicked.connect(self.create_daily_log_entry)
-        
-        log_layout.addWidget(QLabel("<h3>Log New Entry</h3>"))
-        log_layout.addWidget(entry_group)
-        log_layout.addWidget(log_entry_btn)
-        
+        log_form_layout.addLayout(input_form)
+        log_form_layout.addWidget(QLabel("Description:"))
+        log_form_layout.addWidget(self.log_description_input)
+
+        add_log_btn = QPushButton("Save Daily Log Entry")
+        add_log_btn.setStyleSheet("background-color: #0b5394; color: white; padding: 8px;")
+        add_log_btn.clicked.connect(self.add_daily_log)
+        log_form_layout.addWidget(add_log_btn)
+
+        log_layout.addWidget(log_form_widget)
+        log_layout.addWidget(self.create_separator())
+
+        # --- Log History Table ---
         log_layout.addWidget(QLabel("<h3>Log History</h3>"))
         self.log_table = QTableWidget()
         self.log_table.setColumnCount(4)
-        self.log_table.setHorizontalHeaderLabels(['ID', 'Date', 'Description', 'Hours'])
-        self.log_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.log_table.setHorizontalHeaderLabels(['ID', 'Date', 'Hours', 'Description'])
+        self.log_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents) # ID
+        self.log_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents) # Date
+        self.log_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents) # Hours
+        self.log_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch) # Description
+        self.log_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         log_layout.addWidget(self.log_table) 
+        
+        delete_log_btn = QPushButton("Delete Selected Log Entry")
+        delete_log_btn.setStyleSheet("background-color: #cc0000; color: white; padding: 8px;")
+        delete_log_btn.clicked.connect(self.delete_log_entry)
+        log_layout.addWidget(delete_log_btn)
 
         self.tabs.addTab(log_tab, "Daily Log")
-
-    def create_daily_log_entry(self):
+        
+    def add_daily_log(self):
+        """Adds a new daily log entry to the database."""
         log_date = self.log_date_input.text().strip()
-        description = self.log_description.text().strip()
-        hours = self.log_hours_input.value()
+        hours_str = self.log_hours_input.text().strip()
+        description = self.log_description_input.toPlainText().strip()
 
-        if not log_date or not description or hours <= 0:
-            QMessageBox.warning(self, "Input Error", "Please fill in the date, a description, and hours worked.")
+        if not log_date or not hours_str:
+            QMessageBox.warning(self, "Input Error", "Date and Hours Worked are required.")
+            return
+
+        try:
+            hours = float(hours_str)
+            # Basic check for date format (SQLite expects YYYY-MM-DD)
+            datetime.strptime(log_date, '%Y-%m-%d')
+        except ValueError:
+            QMessageBox.warning(self, "Input Error", "Hours must be a number, and Date must be in YYYY-MM-DD format.")
             return
 
         query = "INSERT INTO daily_log (project_id, log_date, description, hours_worked) VALUES (?, ?, ?, ?)"
-        params = (self.project_id, log_date, description, hours)
         
-        if self.db.execute_query(query, params):
-            self.log_description.clear()
-            self.log_hours_input.setValue(0.0)
-            self.log_date_input.setText(self.get_current_date())
-            QMessageBox.information(self, "Success", f"Daily log for {log_date} saved successfully.")
+        if self.db.execute_query(query, (self.project_id, log_date, description, hours)):
+            self.log_hours_input.clear()
+            self.log_description_input.clear()
+            self.log_date_input.setText(QDate.currentDate().toString(Qt.ISODate))
             self.load_daily_logs()
-
+            QMessageBox.information(self, "Success", "Daily log entry saved.")
+            
     def load_daily_logs(self):
-        query = "SELECT id, log_date, description, hours_worked FROM daily_log WHERE project_id = ? ORDER BY log_date DESC"
+        """Loads daily logs from the database into the log history table."""
+        query = "SELECT id, log_date, hours_worked, description FROM daily_log WHERE project_id = ? ORDER BY log_date DESC"
         logs = self.db.fetch_data(query, (self.project_id,))
         
         self.log_table.setRowCount(len(logs))
         
-        for row, (log_id, log_date, description, hours) in enumerate(logs):
+        for row, (log_id, date, hours, description) in enumerate(logs):
             self.log_table.setItem(row, 0, QTableWidgetItem(str(log_id)))
-            self.log_table.setItem(row, 1, QTableWidgetItem(log_date))
-            self.log_table.setItem(row, 2, QTableWidgetItem(description))
-            self.log_table.setItem(row, 3, QTableWidgetItem(f"{hours:.1f}"))
+            self.log_table.setItem(row, 1, QTableWidgetItem(date))
+            self.log_table.setItem(row, 2, QTableWidgetItem(f"{hours:.1f}"))
+            self.log_table.setItem(row, 3, QTableWidgetItem(description))
 
-    def calculate_completion(self):
-        query = "SELECT status FROM tasks WHERE project_id = ?"
-        tasks = self.db.fetch_data(query, (self.project_id,))
+    def delete_log_entry(self):
+        """Deletes the selected daily log entry."""
+        selected_rows = self.log_table.selectionModel().selectedRows()
         
-        if not tasks:
-            return 0.0
+        if not selected_rows:
+            QMessageBox.warning(self, "Selection Error", "Please select a log entry to delete.")
+            return
 
-        total_tasks = len(tasks)
-        completed_tasks = sum(1 for status in tasks if status[0] == 'Completed')
+        row_index = selected_rows[0].row()
+        log_id_item = self.log_table.item(row_index, 0)
         
-        completion_percentage = (completed_tasks / total_tasks) * 100
-        return completion_percentage
+        if not log_id_item:
+            QMessageBox.critical(self, "Data Error", "Could not retrieve log ID.")
+            return
+            
+        log_id = int(log_id_item.text())
 
-    def update_report(self):
-        completion_percent = self.calculate_completion()
-        
-        # Calculate other metrics like total hours logged
-        hours_query = "SELECT SUM(hours_worked) FROM daily_log WHERE project_id = ?"
-        total_hours = self.db.fetch_data(hours_query, (self.project_id,))[0][0] or 0.0
-        
-        # Calculate inventory cost
-        cost_query = "SELECT SUM(quantity * unit_cost) FROM materials WHERE project_id = ?"
-        total_inventory_cost = self.db.fetch_data(cost_query, (self.project_id,))[0][0] or 0.0
+        # Confirmation Dialog
+        reply = QMessageBox.question(self, 'Confirm Deletion', 
+            f"Are you sure you want to delete this log entry (ID: {log_id})? This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
-        # Update the report label 
-        report_text = f"""
-        <h2>Project Status Summary</h2>
-        <p style='font-size: 18pt; font-weight: bold; color: {'#38761d' if completion_percent == 100 else '#f1c232'}'>
-            Completion: {completion_percent:.1f}%
-        </p>
-        <p>Total Tasks: <b>{len(self.db.fetch_data("SELECT id FROM tasks WHERE project_id = ?", (self.project_id,))) or 0}</b></p>
-        <p>Hours Logged: <b>{total_hours:.1f}</b></p>
-        <p>Estimated Inventory Value: <b>${total_inventory_cost:,.2f}</b></p>
-        """
-        self.report_label.setText(report_text)
+        if reply == QMessageBox.No:
+            return
 
+        query = "DELETE FROM daily_log WHERE id = ?"
+        if self.db.execute_query(query, (log_id,)):
+            QMessageBox.information(self, "Success", "Log entry deleted.")
+            self.load_daily_logs()
+
+    # --- TAB 4: Reports ---
 
     def setup_reports(self):
+        """Creates the Status Reports tab (FR3.3)."""
         report_tab = QWidget()
         report_layout = QVBoxLayout(report_tab)
+        report_layout.addWidget(QLabel("<h2>Status Report (FR3.3)</h2>"))
         
-        self.report_label = QLabel("<h2>Status Report</h2>")
-        self.report_label.setWordWrap(True)
-        report_layout.addWidget(self.report_label) 
-        report_layout.addStretch(1)
+        # Summary Labels Area
+        summary_widget = QWidget()
+        summary_layout = QFormLayout(summary_widget)
+        
+        self.status_label = QLabel("Loading...")
+        self.completion_label = QLabel("N/A")
+        self.total_tasks_label = QLabel("N/A")
+        self.total_hours_label = QLabel("N/A")
+        self.total_cost_label = QLabel("N/A")
+        
+        summary_layout.addRow("Project Status:", self.status_label)
+        summary_layout.addRow("Project Completion:", self.completion_label)
+        summary_layout.addRow("Total Tasks:", self.total_tasks_label)
+        summary_layout.addRow("Total Hours Logged:", self.total_hours_label)
+        summary_layout.addRow("Estimated Material Cost:", self.total_cost_label)
+        
+        report_layout.addWidget(summary_widget)
+        report_layout.addWidget(self.create_separator())
+        report_layout.addStretch(1) # Push content to the top
 
         self.tabs.addTab(report_tab, "Reports")
+
+    def update_reports(self):
+        """Calculates and updates all report labels (FR3.3)."""
+        
+        # 1. Completion Percentage (Based on Tasks)
+        total_tasks_query = "SELECT COUNT(*) FROM tasks WHERE project_id = ?"
+        completed_tasks_query = "SELECT COUNT(*) FROM tasks WHERE project_id = ? AND status = 'Complete'"
+        
+        total_tasks = self.db.fetch_data(total_tasks_query, (self.project_id,))[0][0]
+        completed_tasks = self.db.fetch_data(completed_tasks_query, (self.project_id,))[0][0]
+        
+        if total_tasks > 0:
+            completion_percent = (completed_tasks / total_tasks) * 100
+        else:
+            completion_percent = 0
+            
+        self.total_tasks_label.setText(str(total_tasks))
+        self.completion_label.setText(f"{completion_percent:.1f}%")
+        
+        # Update Project Status based on completion
+        if completion_percent == 100 and total_tasks > 0:
+            status = "Completed"
+            status_style = "color: green; font-weight: bold;"
+            # Optional: Update project status in main table if fully complete
+            self.db.execute_query("UPDATE projects SET status = 'Completed' WHERE id = ?", (self.project_id,))
+        elif completion_percent > 0:
+            status = "In Progress"
+            status_style = "color: orange; font-weight: bold;"
+        else:
+            status = "Not Started"
+            status_style = "color: red; font-weight: bold;"
+            
+        self.status_label.setText(status)
+        self.status_label.setStyleSheet(status_style)
+
+
+        # 2. Total Hours Logged
+        hours_query = "SELECT SUM(hours_worked) FROM daily_log WHERE project_id = ?"
+        total_hours = self.db.fetch_data(hours_query, (self.project_id,))[0][0] or 0.0
+        self.total_hours_label.setText(f"{total_hours:.1f} hours")
+        
+        # 3. Estimated Material Cost (Total Cost * Quantity)
+        cost_query = "SELECT SUM(quantity * unit_cost) FROM materials WHERE project_id = ?"
+        total_cost = self.db.fetch_data(cost_query, (self.project_id,))[0][0] or 0.0
+        self.total_cost_label.setText(f"${total_cost:,.2f}")
+
+
+    # --- Utility Functions ---
+
+    def create_separator(self):
+        """Creates a horizontal line separator."""
+        separator = QLabel()
+        separator.setFixedHeight(1)
+        separator.setStyleSheet("background-color: #cccccc;")
+        return separator
+
+    def closeEvent(self, event):
+        """Ensures that when the dashboard is closed, the main window is notified."""
+        self.finished.emit()
+        event.accept()
 
