@@ -88,6 +88,10 @@ class ProjectDashboard(QDialog):
 
        
         task_action_layout = QHBoxLayout()
+
+        progress_task_btn = QPushButton("Mark as In Progress")
+        progress_task_btn.setStyleSheet("background-color: #e67e22; color: white; padding: 8px;") 
+        progress_task_btn.clicked.connect(lambda: self.update_task_status("In Progress"))
         
         complete_task_btn = QPushButton("Mark Selected Task as Complete")
         complete_task_btn.setStyleSheet("background-color: #008080; color: white; padding: 8px;")
@@ -97,6 +101,7 @@ class ProjectDashboard(QDialog):
         delete_task_btn.setStyleSheet("background-color: #cc0000; color: white; padding: 8px;")
         delete_task_btn.clicked.connect(self.delete_task)
 
+        task_action_layout.addWidget(progress_task_btn)
         task_action_layout.addWidget(complete_task_btn)
         task_action_layout.addWidget(delete_task_btn)
         task_layout.addLayout(task_action_layout)
@@ -172,20 +177,21 @@ class ProjectDashboard(QDialog):
         task_id = int(task_id_item.text())
 
         
-        prereq_query = """
-        SELECT t2.name, t2.status 
-        FROM tasks t1 
-        JOIN tasks t2 ON t1.prerequisite_task_id = t2.id
-        WHERE t1.id = ? AND t2.status != 'Complete'
-        """
-        prereq_data = self.db.fetch_data(prereq_query, (task_id,))
+        if status == "Complete":
+            prereq_query = """
+            SELECT t2.name, t2.status 
+            FROM tasks t1 
+            JOIN tasks t2 ON t1.prerequisite_task_id = t2.id
+            WHERE t1.id = ? AND t2.status != 'Complete'
+            """
+            prereq_data = self.db.fetch_data(prereq_query, (task_id,))
 
-        if status == "Complete" and prereq_data:
-            prereq_name = prereq_data[0][0]
-            QMessageBox.warning(self, "Constraint Violation", 
-                f"Cannot mark task as '{status}'. Prerequisite task '{prereq_name}' must be completed first."
-            )
-            return
+            if prereq_data:
+                prereq_name = prereq_data[0][0]
+                QMessageBox.warning(self, "Constraint Violation", 
+                    f"Cannot mark task as '{status}'. Prerequisite task '{prereq_name}' must be completed first."
+                )
+                return
 
         query = "UPDATE tasks SET status = ? WHERE id = ?"
         if self.db.execute_query(query, (status, task_id)):
